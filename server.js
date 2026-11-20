@@ -7,7 +7,7 @@ import { Store } from './lib/store.js';
 import { Auth } from './lib/auth.js';
 import { CalendarCache, expand, fetchIcs, parseIcs, keyToUtc, overlaps } from './lib/ical.js';
 import { getWeather, geocode } from './lib/weather.js';
-import { PROVIDERS, OAuthFlows, RemoteCache, redirectUri, exchangeCode, accessToken, listCalendars, fetchEvents, revoke } from './lib/providers.js';
+import { PROVIDERS, SignIns, RemoteCache, providerConfig, accessToken, listCalendars, fetchEvents, revoke } from './lib/providers.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 try {
@@ -25,7 +25,10 @@ const store = new Store(DATA_DIR);
 const auth = new Auth(store);
 const cache = new CalendarCache();
 const remote = new RemoteCache();
-const flows = new OAuthFlows();
+const signins = new SignIns(async (provider, info) => {
+  store.upsertAccount(provider, info);
+  return info.email || info.name || PROVIDERS[provider].label;
+});
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -101,60 +104,13 @@ function publicSettings() {
 }
 
 function adminConfig() {
-  const o = store.oauth();
-  const base = o.publicUrl || '';
-  const prov = (p) => ({
-    clientId: o[p]?.clientId || '',
-    hasSecret: Boolean(o[p]?.clientSecret),
-    ready: Boolean(providerConfig(p)),
-    redirectUri: base ? redirectUri(base, p) : '',
-    ...(p === 'microsoft' ? { tenant: o[p]?.tenant || 'common' } : {})
-  });
   return {
     appVersion: VERSION,
     settings: store.settings(),
     calendars: store.calendars().map((c) => ({ ...c, status: calStatus(c) })),
     accounts: store.accounts().map(({ id, provider, email, name }) => ({ id, provider, email, name })),
-    oauth: { publicUrl: base, google: prov('google'), microsoft: prov('microsoft') }
+    signIn: { google: Boolean(providerConfig('google')), microsoft: Boolean(providerConfig('microsoft')) }
   };
-}
-
-function requestOrigin(req) {
-  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https' ? 'https' : 'http';
-  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
-  return /^[a-z0-9.-]+(:\d{1,5})?$|^\[[0-9a-f:]+\](:\d{1,5})?$/i.test(host) ? `${proto}://${host}` : '';
-}
-
-function redirect(res, location) {
-  res.writeHead(302, { Location: location, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
-  res.end();
-}
-
-async function oauthRoute(req, res, url, provider, action) {
-  const publicUrl = store.oauth().publicUrl || '';
-  if (action === 'start') {
-    if (!auth.isAuthed(req)) return redirect(res, '/settings');
-    const cfg = providerConfig(provider);
-    const back = (msg) => redirect(res, `/settings?oauth=error&message=${encodeURIComponent(msg)}#accounts`);
-    if (!publicUrl) return back('Set the public URL in Accounts first');
-    if (!cfg) return back(`Enter the ${PROVIDERS[provider].label} client ID and secret first`);
-    return redirect(res, flows.begin(provider, cfg, publicUrl, requestOrigin(req) || publicUrl));
-  }
-  const flow = flows.take(url.searchParams.get('state') || '', provider);
-  const home = flow?.returnTo || publicUrl || '';
-  const done = (ok, msg) => redirect(res, `${home}/settings?oauth=${ok ? 'ok' : 'error'}&message=${encodeURIComponent(msg)}#accounts`);
-  if (!flow) return done(false, 'Sign-in expired or was started elsewhere. Try again.');
-  const err = url.searchParams.get('error');
-  if (err) return done(false, url.searchParams.get('error_description') || err);
-  const cfg = providerConfig(provider);
-  if (!cfg) return done(false, 'Sign-in is not configured');
-  try {
-    const info = await exchangeCode(provider, cfg, url.searchParams.get('code') || '', flow);
-    store.upsertAccount(provider, info);
-    done(true, `Connected ${info.email || PROVIDERS[provider].label}`);
-  } catch (e) {
-    done(false, e?.name === 'TimeoutError' ? 'Timed out talking to the provider' : e.message);
-  }
 }
 
 async function listPhotos() {
@@ -168,11 +124,6 @@ async function listPhotos() {
       .map((f) => `photos/${encodeURIComponent(f)}`);
   } catch {}
   return [...local, ...s.photos.urls];
-}
-
-function providerConfig(provider) {
-  const cfg = store.oauth()[provider] || {};
-  return cfg.clientId && cfg.clientSecret ? cfg : null;
 }
 
 async function tokenFor(accountId) {
@@ -313,7 +264,6 @@ const routes = {
     if (!requireAuth(req, res)) return;
     const body = await readJson(req);
     try {
-      if (body.oauth) store.saveOAuth(body.oauth);
       const calendars = body.calendars ? store.saveCalendars(body.calendars) : store.calendars();
       if (body.settings) store.saveSettings(body.settings);
       cache.sync(calendars.filter((c) => c.type === 'ical'));
@@ -333,6 +283,41 @@ const routes = {
     store.removeAccount(account.id);
     remote.sync(store.calendars().filter((c) => c.type !== 'ical'));
     send(res, 200, adminConfig());
+  },
+
+  'POST /api/admin/signin': async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const { provider } = await readJson(req);
+    const cfg = providerConfig(provider);
+    if (!cfg) return send(res, 400, { error: 'This sign-in is not available in this build' });
+    try {
+      if (provider === 'google') return send(res, 200, { provider, ...signins.beginGoogle(cfg) });
+      send(res, 200, { provider, ...(await signins.beginMicrosoft(cfg)) });
+    } catch (err) {
+      send(res, 502, { error: err?.name === 'TimeoutError' ? 'Timed out talking to Microsoft' : err.message });
+    }
+  },
+
+  'GET /api/admin/signin': async (req, res, url) => {
+    if (!requireAuth(req, res)) return;
+    send(res, 200, signins.status(url.searchParams.get('id') || ''));
+  },
+
+  'POST /api/admin/signin/finish': async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const body = await readJson(req);
+    try {
+      const name = await signins.finishGoogle(providerConfig('google'), body.url);
+      send(res, 200, { ok: true, message: `Connected ${name}`, config: adminConfig() });
+    } catch (err) {
+      send(res, 400, { error: err?.name === 'TimeoutError' ? 'Timed out talking to Google' : err.message });
+    }
+  },
+
+  'POST /api/admin/signin/cancel': async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    signins.cancel((await readJson(req)).id || '');
+    send(res, 200, { ok: true });
   },
 
   'GET /api/admin/account-calendars': async (req, res, url) => {
@@ -382,8 +367,6 @@ const server = createServer(async (req, res) => {
   try {
     const handler = routes[`${req.method} ${path}`];
     if (handler) return await handler(req, res, url);
-    const om = req.method === 'GET' && path.match(/^\/api\/oauth\/(google|microsoft)\/(start|callback)$/);
-    if (om) return await oauthRoute(req, res, url, om[1], om[2]);
     if (path.startsWith('/api/')) return send(res, 404, { error: 'Not found' });
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed');
     if (path === '/' || path === '/index.html') return serveFile(res, join(PUBLIC_DIR, 'index.html'), DISPLAY_HEADERS);

@@ -34,29 +34,30 @@
         <div class="card-head">
           <h2>Accounts <span class="hint">optional</span></h2>
           <span class="row">
-            <a class="button secondary" id="connect-google" href="api/oauth/google/start">Connect Google</a>
-            <a class="button secondary" id="connect-microsoft" href="api/oauth/microsoft/start">Connect Microsoft</a>
+            <button type="button" class="secondary" id="signin-google">Sign in with Google</button>
+            <button type="button" class="secondary" id="signin-microsoft">Sign in with Microsoft</button>
           </span>
         </div>
-        <p class="muted">Sign in to Google or Microsoft (Outlook.com, Microsoft 365) and pick calendars, instead of pasting secret links. Kalends only asks to <em>read</em> calendars.</p>
+        <p class="muted">Sign in to Google or Microsoft (Outlook.com, Hotmail, Microsoft 365) and pick which calendars to show. Kalends can only <em>read</em> your calendars. Sign in as many accounts as you like.</p>
+
+        <div id="flow-microsoft" class="flow" hidden>
+          <p>On your phone or computer, open <a id="ms-link" href="https://microsoft.com/link" target="_blank" rel="noopener">microsoft.com/link</a> and enter this code:</p>
+          <p class="bigcode" id="ms-code"></p>
+          <p class="muted"><span id="ms-wait">Waiting for you to sign in…</span> <button type="button" class="link" id="ms-cancel">Cancel</button></p>
+        </div>
+
+        <div id="flow-google" class="flow" hidden>
+          <ol>
+            <li>Sign in and allow access in the Google tab that just opened. If Google says it <em>hasn't verified this app</em>, click <strong>Advanced</strong> → <strong>Go to Kalends</strong>.</li>
+            <li>Google then sends that tab to a page that <strong>won't load</strong> ("This site can't be reached"). That's expected.</li>
+            <li>Copy that tab's whole address (it starts with <code>http://127.0.0.1</code>), paste it here and press Connect.</li>
+          </ol>
+          <span class="row"><input id="g-url" placeholder="http://127.0.0.1:47613/kalends-sign-in?state=…&amp;code=…" spellcheck="false" autocomplete="off"><button type="button" class="primary" id="g-finish">Connect</button></span>
+          <p class="muted">Tab didn't open? <a id="g-link" href="#" target="_blank" rel="noopener">Open Google sign-in</a> · <button type="button" class="link" id="g-cancel">Cancel</button></p>
+        </div>
+
         <p id="oauth-notice" class="notice" role="status" hidden></p>
         <div id="acct-list" class="acct-list"></div>
-        <details id="oauth-setup">
-          <summary>Sign-in setup</summary>
-          <p class="muted">You need your own Google and/or Microsoft app registration (free; steps in the <a href="https://github.com/BackBayWebDesign/kalends#google-and-microsoft-sign-in" target="_blank" rel="noopener">README</a>). Google and Microsoft only send you back to an <strong>https</strong> address, so Kalends must be reachable at one (for example through a reverse proxy). Save, then connect.</p>
-          <div class="fields">
-            <label class="wide">Public URL of Kalends<input data-oauth="publicUrl" placeholder="https://kalends.example.com" spellcheck="false"></label>
-            <h3 class="wide">Google</h3>
-            <label>Client ID<input data-oauth="google.clientId" spellcheck="false" autocomplete="off"></label>
-            <label>Client secret<input data-oauth="google.clientSecret" type="password" autocomplete="off"></label>
-            <label class="wide">Authorized redirect URI <span class="hint">paste into Google Cloud</span><code class="copy" id="ru-google"></code></label>
-            <h3 class="wide">Microsoft</h3>
-            <label>Application (client) ID<input data-oauth="microsoft.clientId" spellcheck="false" autocomplete="off"></label>
-            <label>Client secret value<input data-oauth="microsoft.clientSecret" type="password" autocomplete="off"></label>
-            <label>Tenant <span class="hint">common = any account</span><input data-oauth="microsoft.tenant" placeholder="common" spellcheck="false"></label>
-            <label class="wide">Redirect URI <span class="hint">Web platform, paste into Entra</span><code class="copy" id="ru-microsoft"></code></label>
-          </div>
-        </details>
       </section>
 
       <section class="card">

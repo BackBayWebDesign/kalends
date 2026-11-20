@@ -92,13 +92,6 @@ button.danger:hover { color: var(--danger); border-color: var(--danger); }
   .cal-actions { grid-column: 2; justify-content: flex-end; }
 }
 
-a.button { display: inline-block; text-decoration: none; font-size: 14px; border-radius: 8px; border: 1px solid var(--line); padding: 8px 14px; color: var(--text); background: #1b2029; }
-a.button:hover { background: #232a35; }
-a.button.disabled { opacity: 0.45; }
-h3 { margin: 6px 0 -4px; font-size: 14px; color: var(--text); }
-details { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
-summary { cursor: pointer; color: var(--accent); }
-code.copy { display: block; padding: 8px 10px; color: var(--text); word-break: break-all; user-select: all; min-height: 2.4em; }
 .notice { padding: 10px 12px; border-radius: 8px; background: var(--field); border: 1px solid var(--line); }
 .notice.ok { border-color: var(--ok); color: var(--ok); }
 .notice.err { border-color: var(--danger); color: var(--danger); }
@@ -112,3 +105,10 @@ code.copy { display: block; padding: 8px 10px; color: var(--text); word-break: b
 .picker { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .picker .row { align-items: center; }
 .cal-source { font-size: 14px; padding: 8px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+.flow { margin-top: 12px; padding: 14px 16px; border: 1px solid var(--accent); border-radius: 10px; background: var(--field); }
+.flow p { margin: 0 0 8px; }
+.flow ol { margin: 0 0 12px; padding-left: 20px; }
+.flow li { margin-bottom: 6px; }
+.flow .row input { flex: 1; }
+.bigcode { font: 600 34px/1.2 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.12em; color: var(--text); user-select: all; }

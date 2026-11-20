@@ -75,56 +75,37 @@ Treat secret links like passwords: anyone with the link can read that calendar.
 
 ## Google and Microsoft sign-in
 
-Optional. Instead of pasting a secret iCal link per calendar, connect the account once
-and tick the calendars you want. You register your own (free) app with Google and/or
-Microsoft, so no third party ever sees your calendars. Kalends only requests read access.
+Optional, and nothing to set up: in **Settings → Accounts** press **Sign in with
+Google** or **Sign in with Microsoft**, sign in, then **Add calendars** next to the
+account and **Save**. Sign in as many accounts as you like. Kalends can only read
+calendars, and tokens stay in the SQLite database in `DATA_DIR`. They never reach the browser.
 
-**Kalends needs an `https://` address.** Google and Microsoft only redirect back to
-`https` (or `localhost`). Put Kalends behind a reverse proxy with a certificate, for
-example `https://kalends.example.com` → `http://<kalends-ip>:3000` in Nginx Proxy
-Manager, Caddy or Traefik. The name only has to resolve for the browser you sign in
-with; it does not need to be reachable from the internet.
+- **Microsoft** (Outlook.com, Hotmail, Live, Microsoft 365): Kalends shows a code.
+  Open `microsoft.com/link` on any device, enter the code and sign in.
+- **Google:** a Google tab opens. Sign in and allow access. Kalends' Google app isn't
+  verified by Google yet, so Google warns about it: click **Advanced → Go to Kalends**.
+  Google then sends the tab to an `http://127.0.0.1/…` address that doesn't load.
+  That's expected: copy that address, paste it into Kalends and press **Connect**.
+  (Google doesn't allow the code-on-screen method for calendars, and self-hosted apps
+  have no fixed web address to return to, so the address is copied back by hand.)
 
-In Kalends: **Settings → Accounts → Sign-in setup**, enter that address as the
-*Public URL* and **Save**. The redirect URIs to register appear underneath.
+Removing an account in Kalends removes its calendars and, for Google, revokes Kalends'
+access. You can also remove it from your Google or Microsoft account's
+security / app permissions page.
 
-### Google
+Work and school Microsoft accounts: some organisations block apps their admin hasn't
+approved. Use the calendar's published ICS link instead.
 
-1. Open [console.cloud.google.com](https://console.cloud.google.com) and create a project
-   (for example *Kalends*).
-2. **APIs & Services → Library**: enable the **Google Calendar API**.
-3. **Google Auth Platform → Branding**: app name *Kalends*, your email as support and
-   developer contact. **Audience**: *External*.
-4. **Audience → Publish app** so the status is **In production**. While an app is in
-   *Testing*, Google expires its sign-ins after 7 days and the calendars stop updating.
-   You don't need Google's verification for your own use; on sign-in Google warns that
-   the app is unverified, and you continue with *Advanced → Go to Kalends*.
-5. **Clients → Create client → Web application**. Under **Authorized redirect URIs**
-   add `https://<your-kalends>/api/oauth/google/callback`. Create it, then copy the
-   **Client ID** and **Client secret** into Kalends and **Save**.
-6. Press **Connect Google**, sign in, then **Add calendars** next to the account.
-   Repeat **Connect Google** for each Google account.
+### Using your own app registration
 
-### Microsoft (Outlook.com, Hotmail, Microsoft 365)
+Kalends ships with its own app registrations, so this is only needed if you want your
+own. Set these in `.env` (or `/opt/kalends.env` in the LXC) and restart:
 
-1. Open [entra.microsoft.com](https://entra.microsoft.com) → **App registrations → New
-   registration**. You need an Entra tenant; a free Azure account comes with one.
-2. Name *Kalends*. Supported account types: **Accounts in any organizational directory
-   and personal Microsoft accounts**. Redirect URI: platform **Web**,
-   `https://<your-kalends>/api/oauth/microsoft/callback`. Register.
-3. Copy the **Application (client) ID** from *Overview*.
-4. **Certificates & secrets → New client secret**, then copy its **Value** (not the
-   Secret ID). Secrets expire (24 months at most): set a reminder to make a new one and
-   paste it into Kalends.
-5. Optional: **API permissions → Add → Microsoft Graph → Delegated**: `Calendars.Read`,
-   `User.Read`, `offline_access`. Kalends asks for these at sign-in anyway.
-6. In Kalends, enter the client ID and secret and **Save**. Leave *Tenant* as `common`;
-   use `consumers` for personal accounts only, or your tenant ID for one organisation.
-7. Press **Connect Microsoft**, sign in, then **Add calendars**.
-
-Removing an account in Kalends removes its calendars and, for Google, revokes
-Kalends' access. Client secrets and sign-in tokens are kept in the SQLite database in
-`DATA_DIR` and are never sent to the browser.
+| Variable | |
+| -------- | - |
+| `KALENDS_GOOGLE_CLIENT_ID`, `KALENDS_GOOGLE_CLIENT_SECRET` | Google Cloud OAuth client of type **Desktop app**, Google Calendar API enabled, `calendar.readonly` scope, app published to *In production* (in *Testing*, sign-ins expire after 7 days) |
+| `KALENDS_MICROSOFT_CLIENT_ID` | Entra app registration for any organisational directory + personal accounts, *Allow public client flows* = Yes, delegated Graph `Calendars.Read` + `offline_access` |
+| `KALENDS_MICROSOFT_TENANT` | Default `common`; `consumers` for personal accounts only, or a tenant ID |
 
 ## Display options
 

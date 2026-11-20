@@ -165,48 +165,105 @@ function readCalendars() {
 
 const PROVIDER_LABEL = { google: 'Google', microsoft: 'Microsoft' };
 let accounts = [];
-let oauthState = {};
+let signInFlow = null;
 
-function fillOAuth(o) {
-  oauthState = o;
-  for (const el of form.querySelectorAll('[data-oauth]')) {
-    const key = el.dataset.oauth;
-    if (key.endsWith('clientSecret')) {
-      el.value = '';
-      el.placeholder = getPath(o, key.replace('clientSecret', 'hasSecret')) ? 'Saved (type to replace)' : '';
-    } else el.value = getPath(o, key) ?? '';
-  }
-  $('ru-google').textContent = o.google.redirectUri || 'Set the public URL and save';
-  $('ru-microsoft').textContent = o.microsoft.redirectUri || 'Set the public URL and save';
+function fillSignIn(avail = {}) {
   for (const p of ['google', 'microsoft']) {
-    const a = $(`connect-${p}`);
-    const ready = o[p].ready && o.publicUrl;
-    a.classList.toggle('disabled', !ready);
-    a.title = ready ? `Sign in with ${PROVIDER_LABEL[p]}` : 'Fill in Sign-in setup and save first';
+    const b = $(`signin-${p}`);
+    b.disabled = !avail[p];
+    b.title = avail[p] ? '' : 'Not available in this build of Kalends';
   }
-  if (!o.publicUrl || (!o.google.ready && !o.microsoft.ready)) $('oauth-setup').open = true;
 }
 
-function readOAuth() {
-  const o = {};
-  for (const el of form.querySelectorAll('[data-oauth]')) {
-    const v = el.value.trim();
-    if (el.dataset.oauth.endsWith('clientSecret') && !v) continue;
-    setPath(o, el.dataset.oauth, v);
-  }
-  return o;
+function endFlow() {
+  if (signInFlow?.timer) clearInterval(signInFlow.timer);
+  signInFlow = null;
+  $('flow-google').hidden = true;
+  $('flow-microsoft').hidden = true;
 }
 
-for (const p of ['google', 'microsoft']) {
-  $(`connect-${p}`).addEventListener('click', (e) => {
-    if (dirty) {
-      e.preventDefault();
-      alert('Save your changes first.');
-    } else if (!(oauthState[p]?.ready && oauthState.publicUrl)) {
-      e.preventDefault();
-      $('oauth-setup').open = true;
-      notice('err', `Fill in the ${PROVIDER_LABEL[p]} part of Sign-in setup and press Save first.`);
+async function connected(message) {
+  endFlow();
+  const data = await api('GET', 'api/admin/config');
+  // keep unsaved edits to calendars: only refresh the account list
+  accounts = data.accounts || [];
+  renderAccounts();
+  notice('ok', `${message}. Now press Add calendars next to the account.`);
+}
+
+$('signin-microsoft').addEventListener('click', async () => {
+  endFlow();
+  notice('', '');
+  try {
+    const r = await api('POST', 'api/admin/signin', { provider: 'microsoft' });
+    $('ms-code').textContent = r.code;
+    $('ms-link').href = r.verifyUrl;
+    $('ms-link').textContent = r.verifyUrl.replace(/^https?:\/\//, '');
+    $('ms-wait').textContent = 'Waiting for you to sign in…';
+    $('flow-microsoft').hidden = false;
+    signInFlow = { id: r.id };
+    signInFlow.timer = setInterval(async () => {
+      const id = signInFlow?.id;
+      if (!id) return;
+      try {
+        const st = await api('GET', `api/admin/signin?id=${encodeURIComponent(id)}`);
+        if (signInFlow?.id !== id) return;
+        if (st.status === 'ok') await connected(st.message);
+        else if (st.status === 'error') {
+          endFlow();
+          notice('err', st.message);
+        }
+      } catch {}
+    }, 3000);
+  } catch (err) {
+    notice('err', err.message);
+  }
+});
+
+$('signin-google').addEventListener('click', async () => {
+  endFlow();
+  notice('', '');
+  const tab = window.open('', '_blank');
+  try {
+    const r = await api('POST', 'api/admin/signin', { provider: 'google' });
+    signInFlow = { id: r.id };
+    $('g-link').href = r.url;
+    $('g-url').value = '';
+    $('flow-google').hidden = false;
+    if (tab) {
+      tab.opener = null;
+      tab.location = r.url;
     }
+    $('g-url').focus();
+  } catch (err) {
+    if (tab) tab.close();
+    notice('err', err.message);
+  }
+});
+
+async function finishGoogle() {
+  const btn = $('g-finish');
+  btn.disabled = true;
+  try {
+    const r = await api('POST', 'api/admin/signin/finish', { url: $('g-url').value });
+    await connected(r.message);
+  } catch (err) {
+    notice('err', err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+$('g-finish').addEventListener('click', finishGoogle);
+$('g-url').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    finishGoogle();
+  }
+});
+for (const id of ['ms-cancel', 'g-cancel']) {
+  $(id).addEventListener('click', () => {
+    if (signInFlow) api('POST', 'api/admin/signin/cancel', { id: signInFlow.id }).catch(() => {});
+    endFlow();
   });
 }
 
@@ -308,15 +365,6 @@ async function showPicker(a, picker) {
   picker.append(row);
 }
 
-function showOAuthResult() {
-  const q = new URLSearchParams(location.search);
-  const r = q.get('oauth');
-  if (!r) return;
-  const msg = q.get('message') || (r === 'ok' ? 'Connected' : 'Sign-in failed');
-  notice(r === 'ok' ? 'ok' : 'err', r === 'ok' ? `${msg}. Now press Add calendars next to the account.` : msg);
-  history.replaceState(null, '', location.pathname + location.hash);
-  $('accounts').scrollIntoView();
-}
 
 /* ---------- settings fields ---------- */
 
@@ -434,7 +482,7 @@ form.addEventListener('submit', async (e) => {
   msg.className = 'muted';
   msg.textContent = 'Saving…';
   try {
-    const data = await api('PUT', 'api/admin/config', { settings: readSettings(), calendars: readCalendars(), oauth: readOAuth() });
+    const data = await api('PUT', 'api/admin/config', { settings: readSettings(), calendars: readCalendars() });
     render(data);
     dirty = false;
     msg.className = 'ok';
@@ -449,7 +497,7 @@ form.addEventListener('submit', async (e) => {
 function render(data) {
   accounts = data.accounts || [];
   fillSettings(data.settings);
-  fillOAuth(data.oauth);
+  fillSignIn(data.signIn);
   renderAccounts();
   $('cal-list').replaceChildren();
   data.calendars.forEach((c) => addCalRow(c));
@@ -463,7 +511,6 @@ async function load() {
     $('logout').hidden = false;
     render(data);
     dirty = false;
-    showOAuthResult();
   } catch (err) {
     if (err.status === 401) showGate(err.data?.error === 'setup' ? 'setup' : 'login');
     else document.body.append(`Could not load settings: ${err.message}`);

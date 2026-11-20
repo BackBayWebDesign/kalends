@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { OAuthFlows, exchangeCode, accessToken, fetchEvents, listCalendars, RemoteCache } from '../lib/providers.js';
+import { SignIns, GOOGLE_REDIRECT, providerConfig, exchangeCode, accessToken, fetchEvents, listCalendars, RemoteCache } from '../lib/providers.js';
 import { Store } from '../lib/store.js';
 
 const realFetch = globalThis.fetch;
@@ -23,22 +23,63 @@ function mockFetch(handler) {
 
 const idToken = (claims) => `x.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.y`;
 
-test('auth URL carries PKCE and state, and state is single-use', () => {
-  const flows = new OAuthFlows();
-  const url = new URL(flows.begin('google', { clientId: 'cid' }, 'https://k.example.com/', 'http://10.0.0.5:3000'));
-  assert.equal(url.origin, 'https://accounts.google.com');
-  assert.equal(url.searchParams.get('redirect_uri'), 'https://k.example.com/api/oauth/google/callback');
-  assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
-  assert.equal(url.searchParams.get('access_type'), 'offline');
-  const state = url.searchParams.get('state');
-  assert.equal(flows.take(state, 'microsoft'), null, 'wrong provider is rejected');
-  const url2 = new URL(flows.begin('microsoft', { clientId: 'cid', tenant: 'consumers' }, 'https://k.example.com', ''));
-  assert.match(url2.pathname, /^\/consumers\/oauth2\/v2.0\/authorize$/);
-  const s2 = url2.searchParams.get('state');
-  const flow = flows.take(s2, 'microsoft');
-  assert.ok(flow.verifier);
-  assert.equal(flow.returnTo, 'https://k.example.com');
-  assert.equal(flows.take(s2, 'microsoft'), null, 'state cannot be reused');
+test('provider config: env overrides the built-in apps', () => {
+  assert.deepEqual(providerConfig('google', { KALENDS_GOOGLE_CLIENT_ID: 'g', KALENDS_GOOGLE_CLIENT_SECRET: 's' }), { clientId: 'g', clientSecret: 's' });
+  assert.deepEqual(providerConfig('microsoft', { KALENDS_MICROSOFT_CLIENT_ID: 'm' }), { clientId: 'm', tenant: 'common' });
+  assert.equal(providerConfig('other', {}), null);
+});
+
+test('Google sign-in: PKCE auth URL, then the pasted loopback address finishes it once', async () => {
+  const connected = [];
+  const s = new SignIns(async (p, info) => {
+    connected.push([p, info.email]);
+    return info.email;
+  });
+  const { id, url } = s.beginGoogle({ clientId: 'cid', clientSecret: 'sec' });
+  const u = new URL(url);
+  assert.equal(u.searchParams.get('redirect_uri'), GOOGLE_REDIRECT);
+  assert.equal(u.searchParams.get('state'), id);
+  assert.equal(u.searchParams.get('code_challenge_method'), 'S256');
+  assert.equal(u.searchParams.get('access_type'), 'offline');
+
+  await assert.rejects(s.finishGoogle({}, 'not a url'), /whole address/);
+  await assert.rejects(s.finishGoogle({}, `${GOOGLE_REDIRECT}?state=wrong&code=x`), /expired/);
+
+  const calls = mockFetch(() => ({ body: { access_token: 'at', refresh_token: 'rt', expires_in: 3600, id_token: idToken({ email: 'me@gmail.com', sub: '1' }) } }));
+  assert.equal(await s.finishGoogle({ clientId: 'cid', clientSecret: 'sec' }, `  ${GOOGLE_REDIRECT}?state=${id}&code=4%2F0abc&scope=x  `), 'me@gmail.com');
+  const body = new URLSearchParams(calls[0].opts.body);
+  assert.equal(body.get('code'), '4/0abc');
+  assert.equal(body.get('redirect_uri'), GOOGLE_REDIRECT);
+  assert.equal(body.get('client_secret'), 'sec');
+  assert.ok(body.get('code_verifier'));
+  assert.deepEqual(connected, [['google', 'me@gmail.com']]);
+  await assert.rejects(s.finishGoogle({}, `${GOOGLE_REDIRECT}?state=${id}&code=again`), /expired or was already used/);
+
+  const second = s.beginGoogle({ clientId: 'cid' });
+  await assert.rejects(s.finishGoogle({}, `${GOOGLE_REDIRECT}?state=${second.id}&error=access_denied`), /not allowed/);
+});
+
+test('Microsoft sign-in: device code, polls until approved, no client secret sent', async () => {
+  let polls = 0;
+  const calls = mockFetch((url) => {
+    if (url.endsWith('/devicecode')) return { body: { device_code: 'dc', user_code: 'ABCD-1234', verification_uri: 'https://microsoft.com/link', expires_in: 900, interval: 2 } };
+    polls++;
+    if (polls < 2) return { status: 400, body: { error: 'authorization_pending' } };
+    return { body: { access_token: 'at', refresh_token: 'rt', expires_in: 3600, id_token: idToken({ preferred_username: 'me@outlook.com', oid: 'o1' }) } };
+  });
+  const s = new SignIns(async (p, info) => info.email, { unitMs: 5 });
+  const r = await s.beginMicrosoft({ clientId: 'mid', tenant: 'common' });
+  assert.equal(r.code, 'ABCD-1234');
+  assert.equal(s.status(r.id).status, 'pending');
+  for (let i = 0; i < 50 && s.status(r.id).status === 'pending'; i++) await new Promise((x) => setTimeout(x, 10));
+  assert.deepEqual(s.status(r.id), { status: 'ok', message: 'Connected me@outlook.com' });
+  for (const c of calls) assert.equal(new URLSearchParams(c.opts.body).get('client_secret'), null);
+  assert.equal(new URLSearchParams(calls.at(-1).opts.body).get('grant_type'), 'urn:ietf:params:oauth:grant-type:device_code');
+
+  mockFetch((url) => (url.endsWith('/devicecode') ? { body: { device_code: 'dc', user_code: 'X', expires_in: 900, interval: 2 } } : { status: 400, body: { error: 'authorization_declined' } }));
+  const r2 = await s.beginMicrosoft({ clientId: 'mid', tenant: 'common' });
+  for (let i = 0; i < 50 && s.status(r2.id).status === 'pending'; i++) await new Promise((x) => setTimeout(x, 10));
+  assert.deepEqual(s.status(r2.id), { status: 'error', message: 'Sign-in was cancelled.' });
 });
 
 test('code exchange reads the id_token and requires a refresh token', async () => {
@@ -52,7 +93,7 @@ test('code exchange reads the id_token and requires a refresh token', async () =
   assert.equal(body.get('grant_type'), 'authorization_code');
 
   mockFetch(() => ({ body: { access_token: 'at', expires_in: 3600 } }));
-  await assert.rejects(exchangeCode('google', { clientId: 'c', clientSecret: 's' }, 'c', { redirect: 'r', verifier: 'v' }), /refresh token/);
+  await assert.rejects(exchangeCode('google', { clientId: 'c', clientSecret: 's' }, 'c', { redirect: 'r', verifier: 'v' }), /No refresh token/);
 });
 
 test('access token refresh keeps a rotated refresh token and explains invalid_grant', async () => {
@@ -64,7 +105,7 @@ test('access token refresh keeps a rotated refresh token and explains invalid_gr
   assert.equal(await accessToken(account, {}, () => assert.fail('should use the cached token')), 'new');
 
   mockFetch(() => ({ status: 400, body: { error: 'invalid_grant', error_description: 'expired' } }));
-  await assert.rejects(accessToken({ ...account, expires_at: 0 }, { clientId: 'c', clientSecret: 's' }, () => {}), /connect it again/);
+  await assert.rejects(accessToken({ ...account, expires_at: 0 }, { clientId: 'c', clientSecret: 's' }, () => {}), /sign in again/);
 });
 
 test('Google events map to the iCal event shape', async () => {
@@ -138,15 +179,10 @@ test('remote cache reuses a covering window and refetches past it', async () => 
   assert.equal(cache.status('c').state, 'pending');
 });
 
-test('store: accounts, typed calendars and OAuth config stay separate from public settings', () => {
+test('store: accounts and typed calendars', () => {
   const dir = mkdtempSync(join(tmpdir(), 'kalends-'));
   try {
     const store = new Store(dir);
-    store.saveOAuth({ publicUrl: 'https://k.example.com/', google: { clientId: 'gid', clientSecret: 'gsecret' } });
-    store.saveOAuth({ google: { clientId: 'gid2', clientSecret: '' } });
-    assert.deepEqual(store.oauth(), { publicUrl: 'https://k.example.com', google: { clientId: 'gid2', clientSecret: 'gsecret' } });
-    assert.ok(!JSON.stringify(store.settings()).includes('gsecret'));
-
     const id = store.upsertAccount('google', { email: 'a@example.com', subject: 's1', refreshToken: 'rt' });
     assert.equal(store.upsertAccount('google', { email: 'a@example.com', subject: 's1', refreshToken: 'rt2' }), id, 'same account is updated, not duplicated');
     assert.equal(store.account(id).refresh_token, 'rt2');

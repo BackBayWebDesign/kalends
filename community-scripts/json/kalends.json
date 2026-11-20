@@ -38,7 +38,7 @@
       "type": "warning"
     },
     {
-      "text": "Google and Microsoft sign-in need Kalends behind an https reverse proxy and your own OAuth app; see the README. iCal links work without either.",
+      "text": "Google and Microsoft accounts: Settings → Accounts → Sign in. Other calendars (TeamSnap, iCloud, Sonarr…) are added by pasting their iCal link.",
       "type": "info"
     }
   ]
