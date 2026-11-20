@@ -5,8 +5,9 @@ import { join, extname, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Store } from './lib/store.js';
 import { Auth } from './lib/auth.js';
-import { CalendarCache, expand, fetchIcs, parseIcs } from './lib/ical.js';
+import { CalendarCache, expand, fetchIcs, parseIcs, keyToUtc, overlaps } from './lib/ical.js';
 import { getWeather, geocode } from './lib/weather.js';
+import { PROVIDERS, OAuthFlows, RemoteCache, redirectUri, exchangeCode, accessToken, listCalendars, fetchEvents, revoke } from './lib/providers.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 try {
@@ -23,6 +24,8 @@ const VERSION = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).ver
 const store = new Store(DATA_DIR);
 const auth = new Auth(store);
 const cache = new CalendarCache();
+const remote = new RemoteCache();
+const flows = new OAuthFlows();
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -97,6 +100,63 @@ function publicSettings() {
   };
 }
 
+function adminConfig() {
+  const o = store.oauth();
+  const base = o.publicUrl || '';
+  const prov = (p) => ({
+    clientId: o[p]?.clientId || '',
+    hasSecret: Boolean(o[p]?.clientSecret),
+    ready: Boolean(providerConfig(p)),
+    redirectUri: base ? redirectUri(base, p) : '',
+    ...(p === 'microsoft' ? { tenant: o[p]?.tenant || 'common' } : {})
+  });
+  return {
+    appVersion: VERSION,
+    settings: store.settings(),
+    calendars: store.calendars().map((c) => ({ ...c, status: calStatus(c) })),
+    accounts: store.accounts().map(({ id, provider, email, name }) => ({ id, provider, email, name })),
+    oauth: { publicUrl: base, google: prov('google'), microsoft: prov('microsoft') }
+  };
+}
+
+function requestOrigin(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https' ? 'https' : 'http';
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  return /^[a-z0-9.-]+(:\d{1,5})?$|^\[[0-9a-f:]+\](:\d{1,5})?$/i.test(host) ? `${proto}://${host}` : '';
+}
+
+function redirect(res, location) {
+  res.writeHead(302, { Location: location, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+  res.end();
+}
+
+async function oauthRoute(req, res, url, provider, action) {
+  const publicUrl = store.oauth().publicUrl || '';
+  if (action === 'start') {
+    if (!auth.isAuthed(req)) return redirect(res, '/settings');
+    const cfg = providerConfig(provider);
+    const back = (msg) => redirect(res, `/settings?oauth=error&message=${encodeURIComponent(msg)}#accounts`);
+    if (!publicUrl) return back('Set the public URL in Accounts first');
+    if (!cfg) return back(`Enter the ${PROVIDERS[provider].label} client ID and secret first`);
+    return redirect(res, flows.begin(provider, cfg, publicUrl, requestOrigin(req) || publicUrl));
+  }
+  const flow = flows.take(url.searchParams.get('state') || '', provider);
+  const home = flow?.returnTo || publicUrl || '';
+  const done = (ok, msg) => redirect(res, `${home}/settings?oauth=${ok ? 'ok' : 'error'}&message=${encodeURIComponent(msg)}#accounts`);
+  if (!flow) return done(false, 'Sign-in expired or was started elsewhere. Try again.');
+  const err = url.searchParams.get('error');
+  if (err) return done(false, url.searchParams.get('error_description') || err);
+  const cfg = providerConfig(provider);
+  if (!cfg) return done(false, 'Sign-in is not configured');
+  try {
+    const info = await exchangeCode(provider, cfg, url.searchParams.get('code') || '', flow);
+    store.upsertAccount(provider, info);
+    done(true, `Connected ${info.email || PROVIDERS[provider].label}`);
+  } catch (e) {
+    done(false, e?.name === 'TimeoutError' ? 'Timed out talking to the provider' : e.message);
+  }
+}
+
 async function listPhotos() {
   const s = store.settings();
   if (!s.photos.enabled) return [];
@@ -110,17 +170,50 @@ async function listPhotos() {
   return [...local, ...s.photos.urls];
 }
 
+function providerConfig(provider) {
+  const cfg = store.oauth()[provider] || {};
+  return cfg.clientId && cfg.clientSecret ? cfg : null;
+}
+
+async function tokenFor(accountId) {
+  const account = store.account(accountId);
+  if (!account) throw new Error('Account is no longer connected');
+  const cfg = providerConfig(account.provider);
+  if (!cfg) throw new Error(`${PROVIDERS[account.provider].label} sign-in is not configured`);
+  return { account, token: await accessToken(account, cfg, (a) => store.saveTokens(a)) };
+}
+
+function calStatus(c) {
+  return c.type === 'ical' ? cache.status(c.id) : remote.status(c.id);
+}
+
 async function events(from, to) {
   const s = store.settings();
   const ttl = s.refreshMinutes * 60000;
   const all = store.calendars();
   const cals = all.filter((c) => c.enabled);
-  cache.sync(all);
-  const results = await Promise.all(cals.map((c) => cache.get(c, ttl).then((entry) => ({ c, entry }))));
+  cache.sync(all.filter((c) => c.type === 'ical'));
+  remote.sync(all.filter((c) => c.type !== 'ical'));
+  const fromMs = keyToUtc(from, s.timezone);
+  const toMs = keyToUtc(to, s.timezone);
+  const results = await Promise.all(
+    cals.map((c) => {
+      if (c.type === 'ical') return cache.get(c, ttl).then((entry) => ({ c, entry }));
+      const loader = async (a, b) => {
+        const { account, token } = await tokenFor(c.account_id);
+        return fetchEvents(account.provider, token, c.remote_id, a, b, c.id);
+      };
+      return remote.get(c, fromMs, toMs, ttl, loader).then((entry) => ({ c, entry }));
+    })
+  );
   const out = [];
   const errors = [];
   for (const { c, entry } of results) {
     if (entry.error) errors.push({ cal: c.id, name: c.name, error: entry.error });
+    if (c.type !== 'ical') {
+      if (entry.events) out.push(...entry.events.filter((e) => overlaps(e, from, to, fromMs, toMs)));
+      continue;
+    }
     if (!entry.parsed) continue;
     try {
       out.push(...expand(entry.parsed, c.id, from, to, s.timezone));
@@ -213,20 +306,42 @@ const routes = {
 
   'GET /api/admin/config': async (req, res) => {
     if (!requireAuth(req, res)) return;
-    const calendars = store.calendars().map((c) => ({ ...c, status: cache.status(c.id) }));
-    send(res, 200, { settings: store.settings(), calendars, appVersion: VERSION });
+    send(res, 200, adminConfig());
   },
 
   'PUT /api/admin/config': async (req, res) => {
     if (!requireAuth(req, res)) return;
     const body = await readJson(req);
     try {
+      if (body.oauth) store.saveOAuth(body.oauth);
       const calendars = body.calendars ? store.saveCalendars(body.calendars) : store.calendars();
-      const settings = body.settings ? store.saveSettings(body.settings) : store.settings();
-      cache.sync(calendars);
-      send(res, 200, { settings, calendars: calendars.map((c) => ({ ...c, status: cache.status(c.id) })) });
+      if (body.settings) store.saveSettings(body.settings);
+      cache.sync(calendars.filter((c) => c.type === 'ical'));
+      remote.sync(calendars.filter((c) => c.type !== 'ical'));
+      send(res, 200, adminConfig());
     } catch (err) {
       send(res, 400, { error: err.message });
+    }
+  },
+
+  'DELETE /api/admin/account': async (req, res, url) => {
+    if (!requireAuth(req, res)) return;
+    const account = store.account(url.searchParams.get('id') || '');
+    if (!account) return send(res, 404, { error: 'No such account' });
+    const cfg = providerConfig(account.provider);
+    if (cfg) await revoke(account).catch(() => {});
+    store.removeAccount(account.id);
+    remote.sync(store.calendars().filter((c) => c.type !== 'ical'));
+    send(res, 200, adminConfig());
+  },
+
+  'GET /api/admin/account-calendars': async (req, res, url) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const { account, token } = await tokenFor(url.searchParams.get('id') || '');
+      send(res, 200, { calendars: await listCalendars(account.provider, token) });
+    } catch (err) {
+      send(res, 502, { error: err?.name === 'TimeoutError' ? 'Timed out' : err.message });
     }
   },
 
@@ -267,6 +382,8 @@ const server = createServer(async (req, res) => {
   try {
     const handler = routes[`${req.method} ${path}`];
     if (handler) return await handler(req, res, url);
+    const om = req.method === 'GET' && path.match(/^\/api\/oauth\/(google|microsoft)\/(start|callback)$/);
+    if (om) return await oauthRoute(req, res, url, om[1], om[2]);
     if (path.startsWith('/api/')) return send(res, 404, { error: 'Not found' });
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed');
     if (path === '/' || path === '/index.html') return serveFile(res, join(PUBLIC_DIR, 'index.html'), DISPLAY_HEADERS);

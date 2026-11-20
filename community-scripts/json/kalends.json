@@ -13,7 +13,7 @@
   "architectures": ["amd64", "arm64"],
   "platforms": ["pve"],
   "logo": "https://raw.githubusercontent.com/BackBayWebDesign/kalends/main/public/favicon.svg",
-  "description": "Kalends is a full-screen wall calendar for a spare display or a dashboard iframe. It merges any number of iCal feeds (Google, iCloud, Outlook, Sonarr, Radarr) into one colour-coded month grid with a big clock, today's agenda and an Open-Meteo forecast, all configured from a web settings page.",
+  "description": "Kalends is a full-screen wall calendar for a spare display or a dashboard iframe. It merges Google and Microsoft accounts (optional sign-in) and any number of iCal feeds (TeamSnap, iCloud, Sonarr, Radarr) into one colour-coded month grid with a big clock, today's agenda and an Open-Meteo forecast, all configured from a web settings page.",
   "install_methods": [
     {
       "type": "default",
@@ -38,7 +38,7 @@
       "type": "warning"
     },
     {
-      "text": "For Google Calendar, paste each calendar's 'Secret address in iCal format' into Settings.",
+      "text": "Google and Microsoft sign-in need Kalends behind an https reverse proxy and your own OAuth app; see the README. iCal links work without either.",
       "type": "info"
     }
   ]

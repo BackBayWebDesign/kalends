@@ -30,12 +30,41 @@
     </section>
 
     <form id="config" hidden>
+      <section class="card" id="accounts">
+        <div class="card-head">
+          <h2>Accounts <span class="hint">optional</span></h2>
+          <span class="row">
+            <a class="button secondary" id="connect-google" href="api/oauth/google/start">Connect Google</a>
+            <a class="button secondary" id="connect-microsoft" href="api/oauth/microsoft/start">Connect Microsoft</a>
+          </span>
+        </div>
+        <p class="muted">Sign in to Google or Microsoft (Outlook.com, Microsoft 365) and pick calendars, instead of pasting secret links. Kalends only asks to <em>read</em> calendars.</p>
+        <p id="oauth-notice" class="notice" role="status" hidden></p>
+        <div id="acct-list" class="acct-list"></div>
+        <details id="oauth-setup">
+          <summary>Sign-in setup</summary>
+          <p class="muted">You need your own Google and/or Microsoft app registration (free; steps in the <a href="https://github.com/BackBayWebDesign/kalends#google-and-microsoft-sign-in" target="_blank" rel="noopener">README</a>). Google and Microsoft only send you back to an <strong>https</strong> address, so Kalends must be reachable at one (for example through a reverse proxy). Save, then connect.</p>
+          <div class="fields">
+            <label class="wide">Public URL of Kalends<input data-oauth="publicUrl" placeholder="https://kalends.example.com" spellcheck="false"></label>
+            <h3 class="wide">Google</h3>
+            <label>Client ID<input data-oauth="google.clientId" spellcheck="false" autocomplete="off"></label>
+            <label>Client secret<input data-oauth="google.clientSecret" type="password" autocomplete="off"></label>
+            <label class="wide">Authorized redirect URI <span class="hint">paste into Google Cloud</span><code class="copy" id="ru-google"></code></label>
+            <h3 class="wide">Microsoft</h3>
+            <label>Application (client) ID<input data-oauth="microsoft.clientId" spellcheck="false" autocomplete="off"></label>
+            <label>Client secret value<input data-oauth="microsoft.clientSecret" type="password" autocomplete="off"></label>
+            <label>Tenant <span class="hint">common = any account</span><input data-oauth="microsoft.tenant" placeholder="common" spellcheck="false"></label>
+            <label class="wide">Redirect URI <span class="hint">Web platform, paste into Entra</span><code class="copy" id="ru-microsoft"></code></label>
+          </div>
+        </details>
+      </section>
+
       <section class="card">
         <div class="card-head">
           <h2>Calendars</h2>
           <button type="button" id="add-cal" class="secondary">+ Add calendar</button>
         </div>
-        <p class="muted">Any iCal (.ics) or webcal link. For Google Calendar, open the calendar's <em>Settings and sharing</em> → <em>Integrate calendar</em> and copy <em>Secret address in iCal format</em>. Sonarr and Radarr: <em>Calendar → iCal Link</em>.</p>
+        <p class="muted">Paste any iCal (.ics) or webcal link: TeamSnap, SportsEngine, GameChanger, school calendars, iCloud, Sonarr and Radarr (<em>Calendar → iCal Link</em>). For Google without signing in, open the calendar's <em>Settings and sharing</em> → <em>Integrate calendar</em> and copy <em>Secret address in iCal format</em>. Calendars from connected accounts are added with <em>Add calendars</em> above.</p>
         <div id="cal-list" class="cal-list"></div>
       </section>
 
@@ -117,6 +146,7 @@
       <span class="cal-url-wrap">
         <input class="cal-url" type="password" placeholder="https://… or webcal://…" aria-label="iCal URL" autocomplete="off" spellcheck="false">
         <button type="button" class="link cal-show" title="Show or hide the link">Show</button>
+        <span class="cal-source muted" hidden></span>
       </span>
       <label class="check cal-enabled-wrap"><input class="cal-enabled" type="checkbox"> On</label>
       <span class="cal-actions">

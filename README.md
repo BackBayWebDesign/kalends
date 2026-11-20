@@ -2,7 +2,8 @@
 
 # Kalends
 
-A self-hosted wall calendar. Kalends merges any number of iCal feeds into one dark,
+A self-hosted wall calendar. Kalends merges Google and Microsoft calendars and any number
+of iCal feeds into one dark,
 full-screen view: a big clock and date, today's agenda, a 5-day forecast and a
 multi-week month grid of colour-coded event bars. It reflows to any screen, from a
 4K portrait wall display to a small landscape iframe on a dashboard.
@@ -10,8 +11,10 @@ multi-week month grid of colour-coded event bars. It reflows to any screen, from
 *Kalends* (Latin *kalendae*) was the first day of the Roman month, and the root of
 the word "calendar".
 
-- **Any iCal feed:** Google Calendar (secret iCal address), iCloud, Outlook/Office 365,
-  Sonarr, Radarr, Nextcloud, public holiday feeds. `webcal://` links work.
+- **Google and Microsoft sign-in (optional):** connect any number of Google and
+  Outlook.com / Microsoft 365 accounts and pick their calendars. Read-only access.
+- **Any iCal feed:** TeamSnap, SportsEngine, GameChanger, school and league calendars,
+  iCloud, Sonarr, Radarr, Nextcloud, public holiday feeds. `webcal://` links work.
 - **One colour per calendar**, set in the browser along with the timezone, week start,
   grid size, refresh interval, clock style and weather location.
 - **Weather** from [Open-Meteo](https://open-meteo.com): no API key, no account.
@@ -70,6 +73,59 @@ settings pages; the display only gets event titles, times and colours.
 
 Treat secret links like passwords: anyone with the link can read that calendar.
 
+## Google and Microsoft sign-in
+
+Optional. Instead of pasting a secret iCal link per calendar, connect the account once
+and tick the calendars you want. You register your own (free) app with Google and/or
+Microsoft, so no third party ever sees your calendars. Kalends only requests read access.
+
+**Kalends needs an `https://` address.** Google and Microsoft only redirect back to
+`https` (or `localhost`). Put Kalends behind a reverse proxy with a certificate, for
+example `https://kalends.example.com` → `http://<kalends-ip>:3000` in Nginx Proxy
+Manager, Caddy or Traefik. The name only has to resolve for the browser you sign in
+with; it does not need to be reachable from the internet.
+
+In Kalends: **Settings → Accounts → Sign-in setup**, enter that address as the
+*Public URL* and **Save**. The redirect URIs to register appear underneath.
+
+### Google
+
+1. Open [console.cloud.google.com](https://console.cloud.google.com) and create a project
+   (for example *Kalends*).
+2. **APIs & Services → Library**: enable the **Google Calendar API**.
+3. **Google Auth Platform → Branding**: app name *Kalends*, your email as support and
+   developer contact. **Audience**: *External*.
+4. **Audience → Publish app** so the status is **In production**. While an app is in
+   *Testing*, Google expires its sign-ins after 7 days and the calendars stop updating.
+   You don't need Google's verification for your own use; on sign-in Google warns that
+   the app is unverified, and you continue with *Advanced → Go to Kalends*.
+5. **Clients → Create client → Web application**. Under **Authorized redirect URIs**
+   add `https://<your-kalends>/api/oauth/google/callback`. Create it, then copy the
+   **Client ID** and **Client secret** into Kalends and **Save**.
+6. Press **Connect Google**, sign in, then **Add calendars** next to the account.
+   Repeat **Connect Google** for each Google account.
+
+### Microsoft (Outlook.com, Hotmail, Microsoft 365)
+
+1. Open [entra.microsoft.com](https://entra.microsoft.com) → **App registrations → New
+   registration**. You need an Entra tenant; a free Azure account comes with one.
+2. Name *Kalends*. Supported account types: **Accounts in any organizational directory
+   and personal Microsoft accounts**. Redirect URI: platform **Web**,
+   `https://<your-kalends>/api/oauth/microsoft/callback`. Register.
+3. Copy the **Application (client) ID** from *Overview*.
+4. **Certificates & secrets → New client secret**, then copy its **Value** (not the
+   Secret ID). Secrets expire (24 months at most): set a reminder to make a new one and
+   paste it into Kalends.
+5. Optional: **API permissions → Add → Microsoft Graph → Delegated**: `Calendars.Read`,
+   `User.Read`, `offline_access`. Kalends asks for these at sign-in anyway.
+6. In Kalends, enter the client ID and secret and **Save**. Leave *Tenant* as `common`;
+   use `consumers` for personal accounts only, or your tenant ID for one organisation.
+7. Press **Connect Microsoft**, sign in, then **Add calendars**.
+
+Removing an account in Kalends removes its calendars and, for Google, revokes
+Kalends' access. Client secrets and sign-in tokens are kept in the SQLite database in
+`DATA_DIR` and are never sent to the browser.
+
 ## Display options
 
 Everything is set on the settings page. These URL parameters override it per screen,
@@ -124,8 +180,7 @@ npm test         # iCal parsing and recurrence tests
 
 ## Roadmap
 
-- Google sign-in (OAuth) as an alternative to secret iCal links
-- CalDAV sources
+- CalDAV sources (Nextcloud, Fastmail, iCloud with an app password)
 - Optional continuous bars for multi-day events across a week row
 
 ## License

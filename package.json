@@ -1,6 +1,6 @@
 {
   "name": "kalends",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Self-hosted wall calendar: iCal feeds merged into one dark, full-screen month view with clock, agenda and weather.",
   "type": "module",
   "main": "server.js",
