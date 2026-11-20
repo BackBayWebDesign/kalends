@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Kalends settings</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="./"><img src="favicon.svg" alt=""> Kalends</a>
+    <nav>
+      <a href="./" target="_blank" rel="noopener">Open display ↗</a>
+      <button id="logout" class="link" hidden>Sign out</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="gate" class="card narrow" hidden>
+      <h1 id="gate-title">Sign in</h1>
+      <p id="gate-text" class="muted"></p>
+      <form id="gate-form">
+        <label>Password <input id="gate-pass" type="password" autocomplete="current-password" required minlength="8"></label>
+        <label id="gate-confirm-row" hidden>Confirm password <input id="gate-confirm" type="password" autocomplete="new-password"></label>
+        <button class="primary" type="submit" id="gate-submit">Sign in</button>
+        <p id="gate-error" class="error" role="alert"></p>
+      </form>
+    </section>
+
+    <form id="config" hidden>
+      <section class="card">
+        <div class="card-head">
+          <h2>Calendars</h2>
+          <button type="button" id="add-cal" class="secondary">+ Add calendar</button>
+        </div>
+        <p class="muted">Any iCal (.ics) or webcal link. For Google Calendar, open the calendar's <em>Settings and sharing</em> → <em>Integrate calendar</em> and copy <em>Secret address in iCal format</em>. Sonarr and Radarr: <em>Calendar → iCal Link</em>.</p>
+        <div id="cal-list" class="cal-list"></div>
+      </section>
+
+      <section class="card">
+        <h2>Display</h2>
+        <div class="fields">
+          <label>Title <span class="hint">optional, shown under the date</span><input name="title" maxlength="80"></label>
+          <label>Timezone<select name="timezone" id="tz"></select></label>
+          <label>Week starts on<select name="weekStart">
+            <option value="0">Sunday</option><option value="1">Monday</option><option value="6">Saturday</option>
+          </select></label>
+          <label>Grid<select name="gridMode">
+            <option value="rolling">Rolling: this week + next weeks</option>
+            <option value="month">Calendar month</option>
+          </select></label>
+          <label>Weeks shown <span class="hint">rolling grid</span><input name="weeks" type="number" min="1" max="8"></label>
+          <label>Layout<select name="layout">
+            <option value="auto">Auto (by screen shape)</option>
+            <option value="portrait">Portrait</option>
+            <option value="landscape">Landscape</option>
+          </select></label>
+          <label>Text size<input name="scale" type="number" min="0.5" max="2" step="0.05"></label>
+          <label>Agenda days<input name="agendaDays" type="number" min="1" max="14"></label>
+          <label>Agenda max items<input name="agendaMax" type="number" min="1" max="30"></label>
+          <label>Refresh calendars every (minutes)<input name="refreshMinutes" type="number" min="1" max="1440"></label>
+          <label>Date language<input name="locale" placeholder="en-US"></label>
+          <label class="check"><input name="clock24" type="checkbox"> 24-hour clock</label>
+          <label class="check"><input name="showSeconds" type="checkbox"> Show seconds</label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Weather</h2>
+        <p class="muted">From <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>, no API key needed.</p>
+        <div class="fields">
+          <label class="check"><input name="weather.enabled" type="checkbox"> Show weather</label>
+          <label>Units<select name="weather.units"><option value="imperial">°F, mph</option><option value="metric">°C, km/h</option></select></label>
+          <label class="wide">Find a place
+            <span class="row"><input id="geo-q" placeholder="City or ZIP code"><button type="button" id="geo-go" class="secondary">Search</button></span>
+            <span id="geo-results" class="geo-results"></span>
+          </label>
+          <label>Place name<input name="weather.name" maxlength="80"></label>
+          <label>Latitude<input name="weather.latitude" type="number" step="0.0001" min="-90" max="90"></label>
+          <label>Longitude<input name="weather.longitude" type="number" step="0.0001" min="-180" max="180"></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Photos <span class="hint">optional</span></h2>
+        <p class="muted">Shown top-left and rotated. Add image URLs below (one per line), or put images in the <code>photos</code> folder of the data directory.</p>
+        <div class="fields">
+          <label class="check"><input name="photos.enabled" type="checkbox"> Show photos</label>
+          <label>Change every (seconds)<input name="photos.intervalSeconds" type="number" min="5" max="86400"></label>
+          <label class="wide">Image URLs<textarea name="photos.urls" rows="3" placeholder="https://example.com/photo.jpg"></textarea></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Password</h2>
+        <div class="fields">
+          <label>Current password<input id="pw-current" type="password" autocomplete="current-password"></label>
+          <label>New password<input id="pw-new" type="password" autocomplete="new-password" minlength="8"></label>
+          <label class="end"><button type="button" id="pw-save" class="secondary">Change password</button></label>
+        </div>
+        <p id="pw-msg" class="muted"></p>
+      </section>
+
+      <div class="savebar">
+        <span id="save-msg" class="muted" role="status"></span>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </main>
+
+  <template id="cal-row">
+    <div class="cal">
+      <input class="cal-color" type="color" aria-label="Colour">
+      <input class="cal-name" placeholder="Name" aria-label="Name" maxlength="80">
+      <span class="cal-url-wrap">
+        <input class="cal-url" type="password" placeholder="https://… or webcal://…" aria-label="iCal URL" autocomplete="off" spellcheck="false">
+        <button type="button" class="link cal-show" title="Show or hide the link">Show</button>
+      </span>
+      <label class="check cal-enabled-wrap"><input class="cal-enabled" type="checkbox"> On</label>
+      <span class="cal-actions">
+        <button type="button" class="secondary cal-test">Test</button>
+        <button type="button" class="icon cal-up" title="Move up" aria-label="Move up">↑</button>
+        <button type="button" class="icon cal-down" title="Move down" aria-label="Move down">↓</button>
+        <button type="button" class="icon danger cal-del" title="Remove" aria-label="Remove">✕</button>
+      </span>
+      <div class="cal-status muted"></div>
+    </div>
+  </template>
+
+  <script src="settings.js" type="module"></script>
+</body>
+</html>

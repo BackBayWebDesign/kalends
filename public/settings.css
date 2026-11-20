@@ -1,0 +1,93 @@
+:root {
+  --bg: #0a0c10;
+  --card: #12151c;
+  --field: #0c0f14;
+  --line: rgba(255, 255, 255, 0.09);
+  --text: #eef1f6;
+  --muted: #8b94a5;
+  --accent: #a78bfa;
+  --accent-ink: #120c24;
+  --danger: #f87171;
+  --ok: #34d399;
+  --font: "Inter", "SF Pro Text", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--font); }
+a { color: var(--accent); }
+code { background: var(--field); padding: 0.1em 0.35em; border-radius: 4px; }
+
+.top {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; background: rgba(10, 12, 16, 0.9); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; font-weight: 600; font-size: 17px; }
+.brand img { width: 26px; height: 26px; }
+.top nav { display: flex; gap: 16px; align-items: center; }
+
+main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 120px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 18px; }
+.card.narrow { max-width: 420px; margin: 60px auto; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1 { margin: 0 0 8px; font-size: 22px; }
+h2 { margin: 0 0 8px; font-size: 17px; }
+.muted { color: var(--muted); }
+.hint { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 4px; }
+.error { color: var(--danger); min-height: 1.2em; }
+
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px 18px; margin-top: 12px; }
+.fields .wide { grid-column: 1 / -1; }
+.fields .end { align-self: end; }
+label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+label.check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
+input, select, textarea {
+  font: inherit; color: var(--text); background: var(--field);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%;
+}
+input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+textarea { resize: vertical; }
+.row { display: flex; gap: 8px; }
+
+button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); padding: 8px 14px; color: var(--text); background: #1b2029; }
+button:hover { background: #232a35; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; padding: 9px 22px; }
+button.primary:hover { filter: brightness(1.08); }
+button.link { background: none; border: 0; padding: 4px 6px; color: var(--accent); }
+button.icon { padding: 6px 10px; }
+button.danger:hover { color: var(--danger); border-color: var(--danger); }
+
+.cal-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.cal {
+  display: grid;
+  grid-template-columns: 44px minmax(120px, 0.8fr) minmax(200px, 2fr) auto auto;
+  gap: 8px 10px; align-items: center;
+  padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--field);
+}
+.cal-color { padding: 2px; height: 38px; cursor: pointer; }
+.cal-url-wrap { display: flex; align-items: center; gap: 4px; }
+.cal-actions { display: flex; gap: 6px; }
+.cal-status { grid-column: 2 / -1; font-size: 13px; }
+.cal-status.ok { color: var(--ok); }
+.cal-status.err { color: var(--danger); }
+
+.geo-results { display: flex; flex-wrap: wrap; gap: 6px; }
+.geo-results button { padding: 5px 10px; font-size: 13px; }
+
+.savebar {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  display: flex; justify-content: flex-end; align-items: center; gap: 16px;
+  padding: 12px 24px; background: rgba(10, 12, 16, 0.94); border-top: 1px solid var(--line);
+}
+.savebar .ok { color: var(--ok); }
+.savebar .err { color: var(--danger); }
+
+@media (max-width: 760px) {
+  .cal { grid-template-columns: 44px 1fr; }
+  .cal-url-wrap, .cal-status { grid-column: 1 / -1; }
+  .cal-enabled-wrap { grid-column: 1; }
+  .cal-actions { grid-column: 2; justify-content: flex-end; }
+}

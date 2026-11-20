@@ -1,0 +1,45 @@
+{
+  "name": "Kalends",
+  "slug": "kalends",
+  "categories": [10],
+  "date_created": "2026-11-20",
+  "type": "ct",
+  "updateable": true,
+  "privileged": false,
+  "interface_port": 3000,
+  "documentation": "https://github.com/BackBayWebDesign/kalends#readme",
+  "website": "https://github.com/BackBayWebDesign/kalends",
+  "repository": "https://github.com/BackBayWebDesign/kalends",
+  "architectures": ["amd64", "arm64"],
+  "platforms": ["pve"],
+  "logo": "https://raw.githubusercontent.com/BackBayWebDesign/kalends/main/public/favicon.svg",
+  "description": "Kalends is a full-screen wall calendar for a spare display or a dashboard iframe. It merges any number of iCal feeds (Google, iCloud, Outlook, Sonarr, Radarr) into one colour-coded month grid with a big clock, today's agenda and an Open-Meteo forecast, all configured from a web settings page.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/kalends.sh",
+      "config_path": "/opt/kalends.env",
+      "resources": {
+        "cpu": 1,
+        "ram": 512,
+        "hdd": 4,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": null,
+    "password": null
+  },
+  "notes": [
+    {
+      "text": "Open /settings first to create the admin password; until then anyone on the network can set it.",
+      "type": "warning"
+    },
+    {
+      "text": "For Google Calendar, paste each calendar's 'Secret address in iCal format' into Settings.",
+      "type": "info"
+    }
+  ]
+}
